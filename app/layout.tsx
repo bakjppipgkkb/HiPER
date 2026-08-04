@@ -16,7 +16,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   return (
     <html lang={language === "bm" ? "ms" : "en"} data-theme={theme} suppressHydrationWarning>
-      <body>
+      <body suppressHydrationWarning>
         <LanguageProvider initialLanguage={language}>
           <ThemeProvider initialTheme={theme}>{children}</ThemeProvider>
         </LanguageProvider>
