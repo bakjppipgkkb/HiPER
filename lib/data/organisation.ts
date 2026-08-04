@@ -70,8 +70,8 @@ export async function getPublicOrganisation(): Promise<
     `)
     .eq("is_active", true)
     .order("level")
-    .order("display_order");
-    .overrideTypes<OrganisationAssignmentRow[], { merge: false }>()    
+    .order("display_order")
+    .overrideTypes<OrganisationAssignmentRow[], { merge: false }>(); 
 
   if (error) {
     return {
