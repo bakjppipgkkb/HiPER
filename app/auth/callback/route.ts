@@ -2,25 +2,61 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const code = url.searchParams.get("code");
-  const requestedNext = url.searchParams.get("next");
-  const next = requestedNext?.startsWith("/") ? requestedNext : "/studio";
+  const requestUrl = new URL(request.url);
+
+  const code = requestUrl.searchParams.get("code");
+  const requestedNext = requestUrl.searchParams.get("next");
+
+  const safeNext =
+    requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+      ? requestedNext
+      : "/studio";
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    ?.trim()
+    .replace(/\/+$/, "");
+
+  if (!siteUrl) {
+    return NextResponse.json(
+      { error: "NEXT_PUBLIC_SITE_URL is not configured" },
+      { status: 500 },
+    );
+  }
+
+  let siteOrigin: URL;
+
+  try {
+    siteOrigin = new URL(siteUrl);
+  } catch {
+    return NextResponse.json(
+      { error: "NEXT_PUBLIC_SITE_URL is invalid" },
+      { status: 500 },
+    );
+  }
+
   const supabase = await createClient();
 
-  if (!supabase) return NextResponse.redirect(new URL("/studio/login?error=unconfigured", url.origin));
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(new URL(next, url.origin));
+  if (!supabase) {
+    return NextResponse.redirect(
+      new URL("/studio/login?error=unconfigured", siteOrigin),
+    );
   }
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
 
-if (!siteUrl) {
-  throw new Error("NEXT_PUBLIC_SITE_URL is not configured");
-}
+  if (!code) {
+    return NextResponse.redirect(
+      new URL("/studio/login?error=missing_code", siteOrigin),
+    );
+  }
 
-const safeNext =
-  next.startsWith("/") && !next.startsWith("//") ? next : "/studio";
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-return NextResponse.redirect(new URL(safeNext, `${siteUrl}/`));
+  if (error) {
+    console.error("OAuth code exchange failed:", error.message);
+
+    return NextResponse.redirect(
+      new URL("/studio/login?error=oauth_callback", siteOrigin),
+    );
+  }
+
+  return NextResponse.redirect(new URL(safeNext, siteOrigin));
 }
