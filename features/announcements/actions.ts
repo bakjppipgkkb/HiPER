@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAdminState } from "@/lib/auth/authorization";
 import { Json } from "@/lib/types/database";
 
-export const announcementFormSchema = z.object({
+const announcementFormSchema = z.object({
   title_bm: z.string()
     .trim()
     .min(1, "Tajuk (BM) wajib diisi")
