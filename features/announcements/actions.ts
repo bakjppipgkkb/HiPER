@@ -88,6 +88,9 @@ export async function uploadPosterAction(formData: FormData) {
     return { status: "error" as const, message: "Tandatangan fail tidak sah. Hanya fail imej PNG dan JPEG yang sebenar sahaja dibenarkan." };
   }
 
+  // Use the MIME type verified from the actual file signature.
+  const detectedMimeType = isPngSignature ? "image/png" : "image/jpeg";
+
   // 4. Generate Safe Random Filename
   const safeFilename = `${crypto.randomUUID()}.${ext}`;
 
@@ -99,8 +102,8 @@ export async function uploadPosterAction(formData: FormData) {
 
   const { error } = await supabase.storage
     .from("announcement-posters")
-    .upload(safeFilename, new Blob([fileBuffer]), {
-      contentType: file.type,
+    .upload(safeFilename, uint8View, {
+      contentType: detectedMimeType,
       cacheControl: "3600",
       upsert: false,
     });
