@@ -111,6 +111,30 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["organisation_assignments"]["Insert"]>;
         Relationships: [];
       };
+      audit_log: {
+        Row: {
+          id: number;
+          actor_id: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          before_data: Json | null;
+          after_data: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          actor_id?: string | null;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          before_data?: Json | null;
+          after_data?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["audit_log"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
