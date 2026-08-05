@@ -271,8 +271,32 @@ export async function updateAnnouncementAction(id: string, data: unknown) {
 
   // Clean up replaced/removed poster safely
   if (existing.poster_path && existing.poster_path !== updatedRecord.poster_path) {
-    if (validatePosterPath(existing.poster_path)) {
-      await supabase.storage.from("announcement-posters").remove([existing.poster_path]);
+    if (!validatePosterPath(existing.poster_path)) {
+      console.error("Poster lama mempunyai path tidak sah:", existing.poster_path);
+
+
+      return {
+        status: "error" as const,
+        message:
+          "Pengumuman telah dikemas kini, tetapi nama poster lama tidak sah untuk dipadam.",
+      };
+    }
+
+
+    const { error: cleanupError } = await supabase.storage
+      .from("announcement-posters")
+      .remove([existing.poster_path]);
+
+
+    if (cleanupError) {
+      console.error("Gagal memadam poster lama:", cleanupError);
+
+
+      return {
+        status: "error" as const,
+        message:
+          `Pengumuman telah dikemas kini, tetapi poster lama gagal dipadam: ${cleanupError.message}`,
+      };
     }
   }
 
@@ -324,8 +348,32 @@ export async function deleteAnnouncementAction(id: string) {
 
   // Clean up poster safely
   if (existing.poster_path) {
-    if (validatePosterPath(existing.poster_path)) {
-      await supabase.storage.from("announcement-posters").remove([existing.poster_path]);
+    if (!validatePosterPath(existing.poster_path)) {
+      console.error("Poster mempunyai path tidak sah:", existing.poster_path);
+
+
+      return {
+        status: "error" as const,
+        message:
+          "Pengumuman telah dipadam, tetapi nama fail posternya tidak sah untuk dipadam.",
+      };
+    }
+
+
+    const { error: cleanupError } = await supabase.storage
+      .from("announcement-posters")
+      .remove([existing.poster_path]);
+
+
+    if (cleanupError) {
+      console.error("Gagal memadam poster pengumuman:", cleanupError);
+
+
+      return {
+        status: "error" as const,
+        message:
+          `Pengumuman telah dipadam, tetapi posternya gagal dipadam: ${cleanupError.message}`,
+      };
     }
   }
 
