@@ -1,36 +1,21 @@
 "use server";
 
-import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAdminState } from "@/lib/auth/authorization";
 import { Json } from "@/lib/types/database";
+import { announcementFormSchema } from "./schema";
 
-const announcementFormSchema = z.object({
-  title_bm: z.string()
-    .trim()
-    .min(1, "Tajuk (BM) wajib diisi")
-    .max(180, "Tajuk (BM) tidak boleh melebihi 180 aksara"),
-  title_en: z.string()
-    .trim()
-    .min(1, "Tajuk (EN) wajib diisi")
-    .max(180, "Tajuk (EN) tidak boleh melebihi 180 aksara"),
-  body_bm: z.string()
-    .trim()
-    .min(1, "Kandungan (BM) wajib diisi")
-    .max(10000, "Kandungan (BM) tidak boleh melebihi 10,000 aksara"),
-  body_en: z.string()
-    .trim()
-    .min(1, "Kandungan (EN) wajib diisi")
-    .max(10000, "Kandungan (EN) tidak boleh melebihi 10,000 aksara"),
-  category: z.string()
-    .trim()
-    .min(1, "Kategori wajib diisi")
-    .max(80, "Kategori tidak boleh melebihi 80 aksara"),
-  poster_path: z.string().trim().nullable().optional(),
-  status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]),
-  published_at: z.string().nullable().optional(),
-});
+// Internal, non-exported validator for poster storage paths
+function validatePosterPath(path: string | null | undefined): boolean {
+  if (!path) return true; // Null/empty is valid (text-only)
+
+  // Only accept UUID format with .png, .jpg, or .jpeg extension
+  const uuidWithExtRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|jpeg)$/i;
+
+  // Ensures no slashes, backslashes, ".." and strict UUID pattern
+  return uuidWithExtRegex.test(path);
+}
 
 export async function uploadPosterAction(formData: FormData) {
   // 1. Authorize ADMIN
@@ -64,6 +49,45 @@ export async function uploadPosterAction(formData: FormData) {
     return { status: "error" as const, message: "Jenis MIME tidak sah. Hanya PNG dan JPEG sahaja dibenarkan." };
   }
 
+  // Read and validate file signatures (magic bytes)
+  const fileBuffer = await file.arrayBuffer();
+  const uint8View = new Uint8Array(fileBuffer);
+
+  // Check PNG Signature: 89 50 4E 47 0D 0A 1A 0A
+  const isPngSignature = uint8View.length >= 8 &&
+    uint8View[0] === 0x89 &&
+    uint8View[1] === 0x50 &&
+    uint8View[2] === 0x4E &&
+    uint8View[3] === 0x47 &&
+    uint8View[4] === 0x0D &&
+    uint8View[5] === 0x0A &&
+    uint8View[6] === 0x1A &&
+    uint8View[7] === 0x0A;
+
+  // Check JPEG Signature: FF D8 FF
+  const isJpegSignature = uint8View.length >= 3 &&
+    uint8View[0] === 0xFF &&
+    uint8View[1] === 0xD8 &&
+    uint8View[2] === 0xFF;
+
+  if (isPngSignature) {
+    if (ext !== "png") {
+      return { status: "error" as const, message: "Sambungan fail tidak sepadan dengan tandatangan imej PNG." };
+    }
+    if (file.type !== "image/png") {
+      return { status: "error" as const, message: "Jenis MIME tidak sepadan dengan tandatangan imej PNG." };
+    }
+  } else if (isJpegSignature) {
+    if (ext !== "jpg" && ext !== "jpeg") {
+      return { status: "error" as const, message: "Sambungan fail tidak sepadan dengan tandatangan imej JPEG." };
+    }
+    if (file.type !== "image/jpeg" && file.type !== "image/jpg") {
+      return { status: "error" as const, message: "Jenis MIME tidak sepadan dengan tandatangan imej JPEG." };
+    }
+  } else {
+    return { status: "error" as const, message: "Tandatangan fail tidak sah. Hanya fail imej PNG dan JPEG yang sebenar sahaja dibenarkan." };
+  }
+
   // 4. Generate Safe Random Filename
   const safeFilename = `${crypto.randomUUID()}.${ext}`;
 
@@ -73,7 +97,6 @@ export async function uploadPosterAction(formData: FormData) {
     return { status: "error" as const, message: "Sistem pangkalan data belum bersedia." };
   }
 
-  const fileBuffer = await file.arrayBuffer();
   const { error } = await supabase.storage
     .from("announcement-posters")
     .upload(safeFilename, new Blob([fileBuffer]), {
@@ -93,6 +116,11 @@ export async function deletePosterAction(posterPath: string) {
   const admin = await getAdminState();
   if (admin.status !== "authorized") {
     return { status: "error" as const, message: "Akses dinafikan: Hanya pentadbir aktif sahaja dibenarkan." };
+  }
+
+  // Validate the poster path
+  if (!validatePosterPath(posterPath)) {
+    return { status: "error" as const, message: "Nama fail poster tidak sah." };
   }
 
   const supabase = await createClient();
@@ -122,6 +150,11 @@ export async function createAnnouncementAction(data: unknown) {
     const errors = parsed.error.flatten().fieldErrors;
     const firstError = Object.values(errors)[0]?.[0] || "Maklumat tidak sah.";
     return { status: "validation_error" as const, message: firstError, errors };
+  }
+
+  // Validate poster path format
+  if (!validatePosterPath(parsed.data.poster_path)) {
+    return { status: "error" as const, message: "Format nama fail poster tidak sah." };
   }
 
   const supabase = await createClient();
@@ -184,6 +217,11 @@ export async function updateAnnouncementAction(id: string, data: unknown) {
     return { status: "validation_error" as const, message: firstError, errors };
   }
 
+  // Validate poster path format
+  if (!validatePosterPath(parsed.data.poster_path)) {
+    return { status: "error" as const, message: "Format nama fail poster tidak sah." };
+  }
+
   const supabase = await createClient();
   if (!supabase) {
     return { status: "error" as const, message: "Sistem pangkalan data belum bersedia." };
@@ -230,7 +268,9 @@ export async function updateAnnouncementAction(id: string, data: unknown) {
 
   // Clean up replaced/removed poster safely
   if (existing.poster_path && existing.poster_path !== updatedRecord.poster_path) {
-    await supabase.storage.from("announcement-posters").remove([existing.poster_path]);
+    if (validatePosterPath(existing.poster_path)) {
+      await supabase.storage.from("announcement-posters").remove([existing.poster_path]);
+    }
   }
 
   // Audit Log
@@ -281,7 +321,9 @@ export async function deleteAnnouncementAction(id: string) {
 
   // Clean up poster safely
   if (existing.poster_path) {
-    await supabase.storage.from("announcement-posters").remove([existing.poster_path]);
+    if (validatePosterPath(existing.poster_path)) {
+      await supabase.storage.from("announcement-posters").remove([existing.poster_path]);
+    }
   }
 
   // Audit Log

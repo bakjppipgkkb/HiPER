@@ -5,6 +5,7 @@ import {
   updateAnnouncementAction,
   deleteAnnouncementAction,
   uploadPosterAction,
+  deletePosterAction,
 } from "./actions";
 import { getAdminState } from "@/lib/auth/authorization";
 import { createClient } from "@/lib/supabase/server";
@@ -86,7 +87,7 @@ describe("Pengumuman Module Server Actions & Validations", () => {
             body_bm: "Kandungan BM",
             body_en: "Content EN",
             category: "Akademik",
-            poster_path: "poster.png",
+            poster_path: "4fa2bb57-dca2-4952-b1e1-1e96a40fb288.png",
             status: "PUBLISHED",
             published_at: "2026-08-05T00:00:00.000Z",
           },
@@ -105,7 +106,7 @@ describe("Pengumuman Module Server Actions & Validations", () => {
             body_bm: "Kandungan BM",
             body_en: "Content EN",
             category: "Akademik",
-            poster_path: "poster.png",
+            poster_path: "4fa2bb57-dca2-4952-b1e1-1e96a40fb288.png",
             status: "PUBLISHED",
             published_at: "2026-08-05T00:00:00.000Z",
           },
@@ -125,7 +126,7 @@ describe("Pengumuman Module Server Actions & Validations", () => {
               body_bm: "Kandungan BM Kemaskini",
               body_en: "Content EN Updated",
               category: "Akademik",
-              poster_path: "new-poster.png",
+              poster_path: "7da1ee57-bca2-4952-a1e1-1e96a40fa399.png",
               status: "PUBLISHED",
               published_at: "2026-08-05T00:00:00.000Z",
             },
@@ -191,11 +192,13 @@ describe("Pengumuman Module Server Actions & Validations", () => {
     });
   });
 
-  // 2. PNG/JPEG Validation, Max 10MB, Invalid MIME types
-  describe("Poster Upload Validations", () => {
-    it("should accept valid PNG file under 10MB", async () => {
+  // 2. File Signature Validations (PNG/JPEG signatures)
+  describe("Poster File Signature & Extension/MIME Checks", () => {
+    it("should accept valid PNG signature and matching png extension and MIME type", async () => {
       const formData = new FormData();
-      const mockFile = new File([new ArrayBuffer(1000)], "test-poster.png", { type: "image/png" });
+      // PNG Signature: 89 50 4E 47 0D 0A 1A 0A
+      const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 1, 2]);
+      const mockFile = new File([bytes], "test-poster.png", { type: "image/png" });
       formData.append("file", mockFile);
 
       const result = await uploadPosterAction(formData);
@@ -203,18 +206,50 @@ describe("Pengumuman Module Server Actions & Validations", () => {
       expect(result).toHaveProperty("poster_path");
     });
 
-    it("should accept valid JPEG file under 10MB", async () => {
+    it("should accept valid JPEG signature and matching jpeg extension and MIME type", async () => {
       const formData = new FormData();
-      const mockFile = new File([new ArrayBuffer(1000)], "test-poster.jpg", { type: "image/jpeg" });
+      // JPEG Signature: FF D8 FF
+      const bytes = new Uint8Array([0xFF, 0xD8, 0xFF, 0, 1, 2]);
+      const mockFile = new File([bytes], "test-poster.jpeg", { type: "image/jpeg" });
       formData.append("file", mockFile);
 
       const result = await uploadPosterAction(formData);
       expect(result.status).toBe("success");
     });
 
+    it("should reject fake JPG content (plain text renamed to .jpg)", async () => {
+      const formData = new FormData();
+      const mockFile = new File([new TextEncoder().encode("not-a-jpeg-content")], "fake-image.jpg", { type: "image/jpeg" });
+      formData.append("file", mockFile);
+
+      const result = await uploadPosterAction(formData);
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("Tandatangan fail tidak sah. Hanya fail imej PNG dan JPEG yang sebenar sahaja dibenarkan.");
+    });
+
+    it("should reject fake PNG content (plain text renamed to .png)", async () => {
+      const formData = new FormData();
+      const mockFile = new File([new TextEncoder().encode("not-a-png-content")], "fake-image.png", { type: "image/png" });
+      formData.append("file", mockFile);
+
+      const result = await uploadPosterAction(formData);
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("Tandatangan fail tidak sah. Hanya fail imej PNG dan JPEG yang sebenar sahaja dibenarkan.");
+    });
+
+    it("should reject MIME/signature mismatch (PNG signature renamed to .jpg)", async () => {
+      const formData = new FormData();
+      const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      const mockFile = new File([bytes], "fake-image.jpg", { type: "image/jpeg" });
+      formData.append("file", mockFile);
+
+      const result = await uploadPosterAction(formData);
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("Sambungan fail tidak sepadan dengan tandatangan imej PNG.");
+    });
+
     it("should reject files over 10 MB", async () => {
       const formData = new FormData();
-      // 10.5 MB file
       const overSizedBuffer = new ArrayBuffer(11 * 1024 * 1024);
       const mockFile = new File([overSizedBuffer], "huge-poster.png", { type: "image/png" });
       formData.append("file", mockFile);
@@ -223,45 +258,66 @@ describe("Pengumuman Module Server Actions & Validations", () => {
       expect(result.status).toBe("error");
       expect(result.message).toBe("Ukuran fail melebihi had maksimum 10 MB.");
     });
-
-    it("should reject invalid file extensions", async () => {
-      const formData = new FormData();
-      const mockFile = new File([new ArrayBuffer(100)], "doc.pdf", { type: "application/pdf" });
-      formData.append("file", mockFile);
-
-      const result = await uploadPosterAction(formData);
-      expect(result.status).toBe("error");
-      expect(result.message).toBe("Hanya fail format PNG, JPG atau JPEG sahaja dibenarkan.");
-    });
-
-    it("should reject invalid MIME types", async () => {
-      const formData = new FormData();
-      // Name has correct extension but MIME type is unsafe/invalid
-      const mockFile = new File([new ArrayBuffer(100)], "fake.png", { type: "text/html" });
-      formData.append("file", mockFile);
-
-      const result = await uploadPosterAction(formData);
-      expect(result.status).toBe("error");
-      expect(result.message).toBe("Jenis MIME tidak sah. Hanya PNG dan JPEG sahaja dibenarkan.");
-    });
   });
 
-  // 3. Poster path mapping
-  describe("Poster Path Mapping", () => {
-    it("should map poster_path correctly during creation", async () => {
+  // 3. Strict poster_path restriction tests
+  describe("Poster Path Traversal & Restriction Checks", () => {
+    it("should reject path traversal attempting to go up directory (../other-file.png)", async () => {
+      const invalidData = {
+        title_bm: "Hebahan Penting",
+        title_en: "Important Notice",
+        body_bm: "Kandungan BM",
+        body_en: "Content EN",
+        category: "Umum",
+        poster_path: "../other-file.png",
+        status: "PUBLISHED" as const,
+      };
+
+      const result = await createAnnouncementAction(invalidData);
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("Format nama fail poster tidak sah.");
+    });
+
+    it("should reject sub-folder path attempts (folder/file.jpg)", async () => {
+      const invalidData = {
+        title_bm: "Hebahan Penting",
+        title_en: "Important Notice",
+        body_bm: "Kandungan BM",
+        body_en: "Content EN",
+        category: "Umum",
+        poster_path: "folder/file.jpg",
+        status: "PUBLISHED" as const,
+      };
+
+      const result = await createAnnouncementAction(invalidData);
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("Format nama fail poster tidak sah.");
+    });
+
+    it("should accept a valid generated UUID poster path (UUID.png)", async () => {
       const validData = {
-        title_bm: "Kempen Kebersihan",
-        title_en: "Hygiene Campaign",
-        body_bm: "Sila sertai aktiviti ini",
-        body_en: "Please join us",
-        category: "Kebajikan",
-        poster_path: "campaign-banner.jpeg",
+        title_bm: "Hebahan Penting",
+        title_en: "Important Notice",
+        body_bm: "Kandungan BM",
+        body_en: "Content EN",
+        category: "Umum",
+        poster_path: "4fa2bb57-dca2-4952-b1e1-1e96a40fb288.png",
         status: "PUBLISHED" as const,
       };
 
       const result = await createAnnouncementAction(validData);
       expect(result.status).toBe("success");
-      expect(result.data?.poster_path).toBe("poster.png"); // mocked returned data
+    });
+
+    it("should reject invalid deletePosterAction path", async () => {
+      const result = await deletePosterAction("../malicious.png");
+      expect(result.status).toBe("error");
+      expect(result.message).toBe("Nama fail poster tidak sah.");
+    });
+
+    it("should accept valid deletePosterAction path", async () => {
+      const result = await deletePosterAction("4fa2bb57-dca2-4952-b1e1-1e96a40fb288.png");
+      expect(result.status).toBe("success");
     });
   });
 
