@@ -1,0 +1,11 @@
+
+> hiper-jppipgkkb-v2@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.12 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+✓ Ready in 602ms
+
+○ Compiling /announcements ...
+ GET /announcements 200 in 5.5s (next.js: 4.2s, proxy.ts: 767ms, application-code: 597ms)

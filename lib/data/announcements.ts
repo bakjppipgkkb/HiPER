@@ -21,8 +21,20 @@ export async function getPublishedAnnouncements(): Promise<DataResult<Announceme
   return { status: "ready", data: data ?? [] };
 }
 
-export function announcementPosterUrl(posterPath: string | null): string | null {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!posterPath || !base) return null;
-  return `${base}/storage/v1/object/public/announcement-posters/${posterPath}`;
+export async function getAllAnnouncements(): Promise<DataResult<Announcement[]>> {
+  const supabase = await createClient();
+  if (!supabase) return { status: "unconfigured", data: [] };
+
+  const { data, error } = await supabase
+    .from("announcements")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return { status: "error", data: [], message: error.message };
+  }
+
+  return { status: "ready", data: data ?? [] };
 }
+
+export { announcementPosterUrl } from "./announcements-client";
